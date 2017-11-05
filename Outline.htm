@@ -5,27 +5,28 @@
 	<link rel="stylesheet" type="text/css" href="base_style.css"/> 
 </head>
 <body>
-	<table>
+	<table class="function-table">
 		<tr>
 			<td>
-				<input style='display:none; width:130px;' type='button' id='btnInsertContentToDoc' value="Paste Content"  onclick='InsertContentToDoc()' />
-				<input style='display:none; width:130px;' type='button' id='btnDeleteContentToDoc' value="Delete Content"  onclick='DeleteContentToDoc()' />
-				<input style='display:none; width:130px;' type='button' id='btnInsertBookmarkToDoc' value="Paste Bookmark"  onclick='InsertBookmarkToDoc()' />
-				<input style='display:none; width:130px;' type='button' id='btnDeleteBookmarkToDoc' value="Delete Bookmark"  onclick='DeleteBookmarkToDoc()' />
-				<input style='display:none; width:130px;' type='button' id='btnInsertOutlineToDoc' value="Paste Outline"  onclick='InsertOutlineToDoc()' />
-				<input style='display:none; width:130px;' type='button' id='btnDeleteOutlineToDoc' value="Delete Outline"  onclick='DeleteOutlineToDoc()' />
+				<input class="docBtn" style='display:none;' type='button' id='btnInsertContentToDoc' value="Paste Content"  onclick='InsertContentToDoc()' />
+				<input class="docBtn" style='display:none;' type='button' id='btnDeleteContentToDoc' value="Delete Content"  onclick='DeleteContentToDoc()' />
+				<input class="docBtn" style='display:none;' type='button' id='btnInsertBookmarkToDoc' value="Paste Bookmark"  onclick='InsertBookmarkToDoc()' />
+				<input class="docBtn" style='display:none;' type='button' id='btnDeleteBookmarkToDoc' value="Delete Bookmark"  onclick='DeleteBookmarkToDoc()' />
+				<input class="docBtn" style='display:none;' type='button' id='btnInsertOutlineToDoc' value="Paste Outline"  onclick='InsertOutlineToDoc()' />
+				<input class="docBtn" style='display:none;' type='button' id='btnDeleteOutlineToDoc' value="Delete Outline"  onclick='DeleteOutlineToDoc()' />
 			</td>
 		</tr>
 		<tr>
 			<td>
-				<input type='checkbox' checked id='chkContent' onclick='onclickContent()' />Contents
-				<input type='checkbox' checked id='chkBookmark' onclick='onclickBookmark()' />Bookmarks
-				<input type='checkbox' checked id='chkWiki' onclick='onclickWiki()' />Wikis
-				<input type='checkbox' checked id='chkH16' onclick='onclickH16()' />H1~H6s
-				<input type='checkbox' checked id='chkBold' onclick='onclickBold()' />Bolds
+				<span class="check-span"><input class="check-box" type='checkbox' checked id='chkContent' onclick='onclickContent()' />目录</span>
+				<span class="check-span"><input class="check-box" type='checkbox' checked id='chkBookmark' onclick='onclickBookmark()' />书签</span>
+				<span class="check-span"><input class="check-box" type='checkbox' checked id='chkWiki' onclick='onclickWiki()' />维基</span>
+				<span class="check-span"><input class="check-box" type='checkbox' checked id='chkH16' onclick='onclickH16()' />大纲</span>
+				<span class="check-span"><input class="check-box" type='checkbox' checked id='chkBold' onclick='onclickBold()' />粗体</span>
 			</td>
 		</tr>
 	</table>
+	<hr class="head-seperator">
 	<div id="divKMContent" style="display:none; margin:10px 0px;"></div>
 	<div id="divKMBookmark" style="display:none; margin:10px 0px;"></div>
 	<div id="divKMWiki" style="display:none; margin:10px 0px;"></div>

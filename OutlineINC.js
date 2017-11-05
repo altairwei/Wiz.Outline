@@ -1,11 +1,15 @@
 ﻿	//
 	var strCheckStatusDefault = "111111"
-	//
-	var WizExplorerApp = window.external;
-	//
-	var objApp = WizExplorerApp;
+	//浏览器对象
+	var objApp = window.external;
 	var objWindow = objApp.Window;
-	var objHtmlDocument = objWindow.CurrentDocumentHtmlDocument;
+	var objCommon = objApp.CreateWizObject("WizKMControls.WizCommonUI");
+	var pluginPath = objApp.GetPluginPathByScriptFileName("Outline.js");
+	//该API在Wiznote 4.5以上版本已经失效
+	//var objHtmlDocument = objWindow.CurrentDocumentHtmlDocument;
+	var objBrowser = objWindow.CurrentDocumentBrowserObject;
+	var pluginBrowser = window.WizChromeBrowser;
+	var serializer = new XMLSerializer();
 	//
 	var pluginPath = objApp.GetPluginPathByScriptFileName("Outline.js");
 	var languangeFileName = pluginPath + "plugin.ini";
@@ -26,21 +30,113 @@
 	var objCheckboxH16 = document.getElementById("chkH16");
 	var objCheckboxBold = document.getElementById("chkBold");
 	////
-	var objAPageTop = objHtmlDocument.getElementById("KMContentPageTopID");
+	//KMContentPageTopID为插件添加在文档的元素
+	//var objAPageTop = objHtmlDocument.getElementById("KMContentPageTopID");
+	var KMCheckStatus;
+	objBrowser.ExecuteScript("document.getElementById('KMContentPageTopID').KMCheckStatus", function(ret){KMCheckStatus = ret});
 	////
 	var listContent = [];
 	var listBookmark = [];
 	var listWiki = [];
 	var listH16 = [];
 	var listBold = [];
+	var newObj;
+	
+	//
 	////
 	////==========================================================================================================================
-	////添加大纲
+	////工具函数
+	function KMGetCurrentBrowserObject() {
+		return objWindow.CurrentDocumentBrowserObject;
+	}
+	
+	// 获取文档浏览器对象
+	function ObjectDeliver(pluginBrowser, obj){
+		var paraList = window.document;
+		pluginBrowser.ExecuteFunction1("ObjectReceiver", paraList, null);
+	}
+	
+	// 对象接收器
+	function ObjectReceiver(obj){
+		//newObj = obj;
+	}
+	
+	// 对象传递测试函数
+	function testFunc(){
+		objBrowser.ExecuteScript(ObjectDeliver.toString(), function(ret){
+			objBrowser.ExecuteFunction1("ObjectDeliver", pluginBrowser, null);
+		});
+	}
+	testFunc();
+	
+	// 字符-元素转换器
+	function ArrayToElements(strArray){
+				// 解析字符串
+				var parser = new DOMParser();
+				var elementsStr = strArray.join("");
+				// 注意，这里获得listContent是伪数组
+				var elemArray = parser.parseFromString(elementsStr, "text/html").body.children;
+				elemArray = Array.prototype.slice.call(elemArray);
+				return elemArray;
+			}
+	
+
+	//// 生成随机数字
+	function getRandomInt() {
+		var objDate = new Date();
+		var strRnd1 = objDate.getTime();
+		var strRnd2 = Math.floor(100 + 900 * Math.random()); //100 ~ 999
+		return strRnd1.toString() + strRnd2.toString();
+	}
+
+	////
+	function getRepStr(str,i) {
+		return new Array(i+1).join(str);
+	}
+
+	////
+	function getCompare(a,b) {
+		if (a.getAttribute("offsetTop") < b.getAttribute("offsetTop")) { return -1; }
+		else if (a.getAttribute("offsetTop") == b.getAttribute("offsetTop") && a.offsetLeft < b.offsetLeft) {return -1; }
+		else { return 1; }
+	}
+
+	////
+	function getCheckStatus(str,iType) {
+		if (iType == 1) {
+			if (str == "1") { return true; }
+			else { return false; }
+		}
+		else {
+			if (str) { return "1"; }
+			else { return "0"; }
+		}
+	}
+
+	////跳转到页面元素位置
+	function gotoElem(pos) {
+		// 需要注入文档浏览器执行
+		objBrowser.ExecuteScript("document.body.scrollTop =" + pos, null);
+	    /*
+		try {
+	        var left = document.body.offsetLeft;
+	        document.body.scrollTop = pos;
+	    }
+	    catch (err) {
+	        alert(err);
+	    }
+		*/
+	}
+	
+	// 将序列化储存的对象还原
+	////
+	////==========================================================================================================================
+	////初始化添加大纲
 	Initial();
 	//
 	function Initial() {
-		if (!objAPageTop || !objAPageTop.KMCheckStatus) { var strCheckStatus = strCheckStatusDefault; }
-		else {var strCheckStatus = objAPageTop.KMCheckStatus; }
+		if (!KMCheckStatus) { var strCheckStatus = strCheckStatusDefault; }
+		else {var strCheckStatus = KMCheckStatus; }
 		objCheckboxContent.setAttribute("checked", getCheckStatus(strCheckStatus.substr(0,1),1));
 		objCheckboxBookmark.setAttribute("checked", getCheckStatus(strCheckStatus.substr(1,1),1));
 		objCheckboxWiki.setAttribute("checked", getCheckStatus(strCheckStatus.substr(2,1),1));
@@ -55,118 +151,184 @@
 	}
 	////
 	////==========================================================================================================================
-	////
-	//
+	////需要传入文档浏览器的函数
+	//用户自己设定的Wizhelper contents
 	function GetContent() {
-		// 添加目录形式【KMContentClass=1~5】的大纲
-		listContent = [];
-		var objAs = objHtmlDocument.getElementsByTagName("A");
+		// 返回DOM对象序列化后的数组，该函数会传入文档浏览器执行
+		var listContent = [];
+		var serializer = new XMLSerializer();
+		
+		// 添加目录形式【KMContentClass=1~5】的大纲链接
+		var objAs = document.getElementsByTagName("A");
 		for (var i = 0; i < objAs.length; i++) {
 			var elem = objAs[i];
+			elem.setAttribute("offsetTop", elem.offsetTop.toString());
+			elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 			var id = elem.id;
 			var iClass = parseInt(elem.getAttribute('KMContentClass'));
 			var name = elem.name;
-			if (iClass) { listContent.push(elem); }
+			if (iClass) {
+				// 【iClass】是专属于Content的自定义属性
+				// 将DOM对象序列化
+				var elemAString = serializer.serializeToString(elem);
+				listContent.push(elemAString);
+			}
 		}
 		// H1~H6
 		for (var k = 1; k <= 6; k++){
-			var objH16 = objHtmlDocument.getElementsByTagName("H"+k);
+			var objH16 = document.getElementsByTagName("H"+k);
 			for (var i = 0; i < objH16.length; i++) {
 				var elem = objH16[i];
+				elem.setAttribute("offsetTop", elem.offsetTop.toString());
+				elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 				var text = elem.innerText;
 				var iClass = parseInt(elem.getAttribute("KMContentClass"));
 				if (iClass && text != null && text != "") {
-					listContent.push(elem);
+					// 将DOM对象序列化
+					var elemHString = serializer.serializeToString(elem);
+					listContent.push(elemHString);
 				}
 			}
 		}
 		// Wiki
-		var objWiki = objHtmlDocument.getElementsByTagName("DIV");
+		var objWiki = document.getElementsByTagName("DIV");
 		for (var i = 0; i < objWiki.length; i++) {
 			var elem = objWiki[i];
+			elem.setAttribute("offsetTop", elem.offsetTop.toString());
+			elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 			var text = elem.innerText;
 			var iClass = parseInt(elem.getAttribute("KMContentClass"));
 			if  (iClass && text != null && text != "" && text.search(/^=[^<>]+=$/) > -1) {
-				listContent.push(elem);
+				// 将DOM对象序列化
+				var elemDIVString = serializer.serializeToString(elem);
+				listContent.push(elemDIVString);
 			}
 		}
 		// Bold
-		var objBold = objHtmlDocument.getElementsByTagName("B");
+		var objBold = document.getElementsByTagName("B");
 		for (var i = 0; i < objBold.length; i++) {
 			var elem = objBold[i];
+			elem.setAttribute("offsetTop", elem.offsetTop.toString());
+			elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 			var text = elem.innerText;
 			var iClass = parseInt(elem.getAttribute("KMContentClass"));
 			if  (iClass && text != null && text != "") {
-				listContent.push(elem);
+				// 将DOM对象序列化
+				var elemBString = serializer.serializeToString(elem);
+				listContent.push(elemBString);
 			}
 		}
 		// Strong
-		var objStrongs = objHtmlDocument.getElementsByTagName("STRONG");
+		var objStrongs = document.getElementsByTagName("STRONG");
 		for (var i = 0; i < objStrongs.length; i++) {
 			var elem = objStrongs[i];
+			elem.setAttribute("offsetTop", elem.offsetTop.toString());
+			elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 			var text = elem.innerText;
 			var iClass = parseInt(elem.getAttribute("KMContentClass"));
 			if  (iClass && text != null && text != "") {
-				listContent.push(elem);
+				// 将DOM对象序列化
+				var elemStrongString = serializer.serializeToString(elem);
+				listContent.push(elemStrongString);
 			}
 		}
+		//console.log("GetContent" + listContent);
+		return listContent;
 	}
 	//
 	function GetBookmark() {
 		// 添加书签形式【<a name="bookmarkname">】的大纲
-		listBookmark = [];
-		var objAs = objHtmlDocument.getElementsByTagName("A");
+		var listBookmark = [];
+		var serializer = new XMLSerializer();
+		var objAs = document.getElementsByTagName("A");
 		for (var i = 0; i < objAs.length; i++) {
 			var elem = objAs[i];
+			if (!elem.id){elem.id = "WizKMOutline_" + getRandomInt();}
+			elem.setAttribute("offsetTop", elem.offsetTop.toString());
+			elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 			var id = elem.id;
 			var name = elem.name;
 			var iClass = parseInt(elem.getAttribute("KMContentClass"));
 			var isHide = elem.getAttribute("KMContentHide");
 			if  ((!isHide || isHide != "1") && !iClass && id!="KMContentPageTopID" && name != null && name != "") {
-				listBookmark.push(elem);
+				// 将DOM对象序列化
+				var elemBookmarkString = serializer.serializeToString(elem);
+				listBookmark.push(elemBookmarkString);
 			}
 		}
+		//console.log("GetBookmark");
+		return listBookmark;
 	}
 	//
 	function GetH16(){
 		// 添加标题样式【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】的大纲
-		listWiki = [];
+		var listH16 = [];
+		var serializer = new XMLSerializer();
 		for (var k = 1; k <= 6; k++){
-			var objH16 = objHtmlDocument.getElementsByTagName("H"+k);
+			var objH16 = document.getElementsByTagName("H"+k);
 			for (var i = 0; i < objH16.length; i++) {
 				var elem = objH16[i];
+				if (!elem.id){elem.id = "WizKMOutline_" + getRandomInt();}
+				elem.setAttribute("offsetTop", elem.offsetTop.toString());
+				elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 				var text = elem.innerText;
 				var iClass = parseInt(elem.getAttribute("KMContentClass"));
 				var isHide = elem.getAttribute("KMContentHide");
 				if  ((!isHide || isHide != "1") && !iClass && text != null && text != "") {
+					// 拥有iClass属性的不应爱被捕捉
 					listH16.push(elem);
 				}
 			}
 		}
+		// 定义比较函数
+		function getCompare(a,b) {
+			if (a.offsetTop < b.offsetTop) { return -1; }
+			else if (a.offsetTop == b.offsetTop && a.offsetLeft < b.offsetLeft) {return -1; }
+			else { return 1; }
+		}
+		// 对大纲按照在文档中的位置进行排序
 		listH16.sort(getCompare);
+		// 将DOM对象序列化
+		for (var j=0; j<listH16.length; j++) {
+			listH16[j] = serializer.serializeToString(listH16[j]);
+		}
+		//console.log("GetH16" + listH16);
+		return listH16;
 	}
 	//
 	function GetWiki(){
 		// 添加 google code wiki 大纲
-		listH16 = [];
-		var objWiki = objHtmlDocument.getElementsByTagName("DIV");
+		var listWiki = [];
+		var serializer = new XMLSerializer();
+		var objWiki = document.getElementsByTagName("DIV");
 		for (var i = 0; i < objWiki.length; i++) {
 			var elem = objWiki[i];
+			if (!elem.id){elem.id = "WizKMOutline_" + getRandomInt();}
+			elem.setAttribute("offsetTop", elem.offsetTop.toString());
+			elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 			var text = elem.innerText;
 			var iClass = parseInt(elem.getAttribute("KMContentClass"));
 			var isHide = elem.getAttribute("KMContentHide");
 			if  ((!isHide || isHide != "1") && !iClass && text != null && text != "" && text.search(/^=[^<>]+=$/) > -1) {
-				listWiki.push(elem);
+				// 将DOM对象序列化
+				var elemWikiString = serializer.serializeToString(elem);
+				listWiki.push(elemWikiString);
 			}
 		}
+		//console.log("GetWiki" + listWiki);
+		return listWiki;
 	}
 	//
 	function GetBold(){
 		// 添加加粗样式【<strong>,<b>】的大纲
-		listBold = [];
-		var objBold = objHtmlDocument.getElementsByTagName("B");
+		var listBold = [];
+		var serializer = new XMLSerializer();
+		var objBold = document.getElementsByTagName("B");
 		for (var i = 0; i < objBold.length; i++) {
 			var elem = objBold[i];
+			if (!elem.id){elem.id = "WizKMOutline_" + getRandomInt();}
+			elem.setAttribute("offsetTop", elem.offsetTop.toString());
+			elem.setAttribute("offsetLeft", elem.offsetLeft.toString());
 			var text = elem.innerText;
 			var iClass = parseInt(elem.getAttribute("KMContentClass"));
 			var isHide = elem.getAttribute("KMContentHide");
@@ -174,7 +336,7 @@
 				listBold.push(elem);
 			}
 		}
-		var objStrongs = objHtmlDocument.getElementsByTagName("STRONG");
+		var objStrongs = document.getElementsByTagName("STRONG");
 		for (var i = 0; i < objStrongs.length; i++) {
 			var elem = objStrongs[i];
 			var text = elem.innerText;
@@ -184,6 +346,12 @@
 				listBold.push(elem);
 			}
 		}
+		// 将DOM对象序列化
+		for (var i=0; i<listBold.length; i++) {
+			listBold[i] = serializer.serializeToString(listBold[i]);
+		}
+		//console.log("GetBold" + listBold);
+		return listBold;
 	}
 	////
 	////==========================================================================================================================
@@ -196,11 +364,12 @@
 				//alert(elem.getAttribute("KMContentClass") + " : " + elem.innerText);
 				iClass = parseInt(elem.getAttribute('KMContentClass'));
 				htmlContent += getRepStr("KMContent_Begin", iClass-1);
-				htmlContent += "<li><a href=\"javascript:void(0);\" onclick=\"gotoElem('" + elem.offsetTop + "');\">" + elem.innerText + "</a>";
-				htmlContent += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"ClassContent('"+ i + "',-1);\"><</a>";
-				htmlContent += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"UnContent('"+ i + "');\">X</a>";
-				htmlContent += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"ContentToOutline('" + i + "');\">0</a>";
-				htmlContent += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"ClassContent('"+ i + "',1);\">></a></li>";
+				if (elem.name){htmlContent += "<li><a href=\"javascript:void(0);\" onclick=\"gotoElem('" + elem.getAttribute("offsetTop") + "');\">" + elem.name + "</a>";}
+				else {htmlContent += "<li><a href=\"javascript:void(0);\" onclick=\"gotoElem('" + elem.getAttribute("offsetTop") + "');\">" + elem.innerText + "</a>";}
+				htmlContent += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"ClassContent('"+ i + "',-1);\"><</a>";
+				//htmlContent += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"UnContent('"+ i + "');\">X</a>";
+				htmlContent += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"ContentToOutline('" + i + "');\">0</a>";
+				htmlContent += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"ClassContent('"+ i + "',1);\">></a></li>";
 				htmlContent += getRepStr("KMContent_End", iClass-1);
 			}
 			//
@@ -210,9 +379,10 @@
 			htmlContent = htmlContent.replace(/KMContent_Begin/g,"<UL style=\"MARGIN: 0px 0px 0px 30px\">");
 			htmlContent = htmlContent.replace(/KMContent_End/g,"</UL>");
 			//
-			htmlContent = "<div style=\"font-weight:bold; border-bottom-style:groove;\">Wizhelper contents :</div><UL style=\"margin:0px 0px 0px 30px\">" + htmlContent + "</UL>";
+			htmlContent = "<div class=\"block-title\">自定义目录 :</div><UL class=\"block-list\">" + htmlContent + "</UL><hr class=\"seperator\">";
 			document.getElementById("divKMContent").innerHTML = htmlContent;
 			document.getElementById("divKMContent").style.display = "";
+			
 			CheckIfContentExist();
 		}
 		else {
@@ -227,11 +397,10 @@
 			for (i=0; i<listBookmark.length; i++) {
 				var elem = listBookmark[i];
 				if (elem.getAttribute("KMContentHide") == "1" || elem.id == "KMContentPageTopID") { continue; }
-				if (elem.name) { htmlBookmark += getHtmlString(1, i, elem.offsetTop, elem.name); }
-				else { htmlBookmark += getHtmlString(1, i, elem.offsetTop, elem.innerText); }
+				if (elem.name) { elem.innerText = elem.name; htmlBookmark += getHtmlString(1, i, elem.getAttribute("offsetTop"), elem.innerText); }
 			}
 			if (htmlBookmark.length>0){
-				htmlBookmark = "<div style=\"font-weight:bold; border-bottom-style:groove;\">Bookmarks :</div><ul style=\"margin:0px 0px 0px 20px\">" + htmlBookmark + "</ul>";
+				htmlBookmark = "<div class=\"block-title\">Bookmarks :</div><ul style=\"margin:0px 0px 0px 20px\">" + htmlBookmark + "</ul><hr class=\"seperator\">";
 				document.getElementById("divKMBookmark").innerHTML = htmlBookmark;
 				document.getElementById("divKMBookmark").style.display = "";
 				CheckIfBookmarkExist();
@@ -249,10 +418,10 @@
 			for (i=0; i<listWiki.length; i++) {
 				var elem = listWiki[i];
 				if (elem.getAttribute("KMContentHide") == "1") { continue; }
-				htmlWiki += getHtmlString(2, i, elem.offsetTop, elem.innerText);
+				htmlWiki += getHtmlString(2, i, elem.getAttribute("offsetTop"), elem.innerText);
 			}
 			if (htmlWiki.length>0) {
-				htmlWiki = "<div style=\"font-weight:bold; border-bottom-style:groove;\">Wiki outline :</div><ul style=\"margin:0px 0px 0px 20px\">" + htmlWiki + "</ul>";
+				htmlWiki = "<div class=\"block-title\">Wiki outline :</div><ul style=\"margin:0px 0px 0px 20px\">" + htmlWiki + "</ul><hr class=\"seperator\">";
 				document.getElementById("divKMWiki").innerHTML = htmlWiki;
 				document.getElementById("divKMWiki").style.display = "";
 			}
@@ -271,7 +440,7 @@
 				if (elem.getAttribute("KMContentHide") == "1") { continue; }
 				iClass = parseInt(elem.tagName.substr(1,1));
 				htmlH16 += getRepStr("KMContent_Begin", iClass-1);
-				htmlH16 += getHtmlString(3, i, elem.offsetTop, elem.innerText);
+				htmlH16 += getHtmlString(3, i, elem.getAttribute("offsetTop"), elem.innerText);
 				htmlH16 += getRepStr("KMContent_End", iClass-1);
 			}
 			if (htmlH16.length>0) {
@@ -280,7 +449,7 @@
 				}
 				htmlH16 = htmlH16.replace(/KMContent_Begin/g,"<UL style=\"MARGIN: 0px 0px 0px 30px\">");
 				htmlH16 = htmlH16.replace(/KMContent_End/g,"</UL>");
-				htmlH16 = "<div style=\"font-weight:bold; border-bottom-style:groove;\">H1~H6 outline :</div><ul style=\"margin:0px 0px 0px 20px\">" + htmlH16 + "</ul>";
+				htmlH16 = "<div class=\"block-title\">H1~H6 大纲 :</div><ul style=\"margin:0px 0px 0px 20px\">" + htmlH16 + "</ul><hr class=\"seperator\">";
 				document.getElementById("divKMH16").innerHTML = htmlH16;
 				document.getElementById("divKMH16").style.display = "";
 				CheckIfOutlineExist();
@@ -298,10 +467,10 @@
 			for (i=0; i<listBold.length; i++) {
 				var elem = listBold[i];
 				if (elem.getAttribute("KMContentHide") == "1") { continue; }
-				htmlBold += getHtmlString(4, i, elem.offsetTop, elem.innerText);
+				htmlBold += getHtmlString(4, i, elem.getAttribute("offsetTop"), elem.innerText);
 			}
 			if (htmlBold.length>0) {
-				htmlBold = "<div style=\"font-weight:bold; border-bottom-style:groove;\">Bold outline :</div><ul style=\"margin:0px 0px 0px 20px\">" + htmlBold + "</ul>";
+				htmlBold = "<div class=\"block-title\">Bold outline :</div><ul style=\"margin:0px 0px 0px 20px\">" + htmlBold + "</ul><hr class=\"seperator\">";
 				document.getElementById("divKMBold").innerHTML = htmlBold;
 				document.getElementById("divKMBold").style.display = "";
 			}
@@ -312,11 +481,22 @@
 	}
 	////
 	////==========================================================================================================================
-	////
+	//// 起始函数下游
 	function GetAndPrintContent() {
 		if (objCheckboxContent.checked) {
-			GetContent();
-			PrintContent();
+			//将函数注入目标浏览器
+			objBrowser.ExecuteScript(GetContent.toString(), function(ret){
+				//调用目标浏览器内注入的函数
+				objBrowser.ExecuteFunction0("GetContent", function(ret){
+					if (ret) {
+						//console.log(ret);
+						listContent = ArrayToElements(ret);
+						// 将大纲在插件下拉菜单中打印出来
+						PrintContent();
+					}
+				});
+			});
+			
 		}
 		else {
 			document.getElementById("divKMContent").style.display = "none";
@@ -325,8 +505,20 @@
 	//
 	function GetAndPrintBookmark() {
 		if (objCheckboxBookmark.checked) {
-			GetBookmark();
-			PrintBookmark();
+			//将函数注入目标浏览器
+			objBrowser.ExecuteScript(GetBookmark.toString(), function(ret){
+				//调用目标浏览器内注入的函数
+				objBrowser.ExecuteFunction0("GetBookmark", function(ret){
+					if (ret) {
+						//console.log(ret);
+						listBookmark = ArrayToElements(ret);
+						// 显示在下拉菜单中
+						PrintBookmark();
+					}
+					
+				});
+			});
+			
 		}
 		else {
 			document.getElementById("divKMBookmark").style.display = "none";
@@ -335,8 +527,19 @@
 	//
 	function GetAndPrintWiki() {
 		if (objCheckboxWiki.checked) {
-			GetWiki();
-			PrintWiki();
+			//将函数注入目标浏览器
+			objBrowser.ExecuteScript(GetWiki.toString(), function(ret){
+				//调用目标浏览器内注入的函数
+				objBrowser.ExecuteFunction0("GetWiki", function(ret){
+					if (ret) {
+						//console.log(ret);
+						listWiki = ArrayToElements(ret);
+						PrintWiki();
+					}
+					
+				});
+			});
+			
 		}
 		else {
 			document.getElementById("divKMWiki").style.display = "none";
@@ -345,8 +548,19 @@
 	//
 	function GetAndPrintH16() {
 		if (objCheckboxH16.checked) {
-			GetH16();
-			PrintH16();
+			//将函数注入目标浏览器
+			objBrowser.ExecuteScript(GetH16.toString() + getRandomInt.toString(), function(ret){
+				//调用目标浏览器内注入的函数
+				objBrowser.ExecuteFunction0("GetH16", function(ret){
+					if (ret) {
+						//console.log(ret);
+						listH16 = ArrayToElements(ret);
+						PrintH16();
+					}
+					
+				});
+			});
+			
 		}
 		else {
 			document.getElementById("divKMH16").style.display = "none";
@@ -355,8 +569,19 @@
 	//
 	function GetAndPrintBold() {
 		if (objCheckboxBold.checked) {
-			GetBold();
-			PrintBold();
+			//将函数注入目标浏览器
+			objBrowser.ExecuteScript(GetBold.toString(), function(ret){
+				//调用目标浏览器内注入的函数
+				objBrowser.ExecuteFunction0("GetBold", function(ret){
+					if (ret) {
+						//console.log(ret);
+						listBold = ArrayToElements(ret);
+						PrintBold();
+					}
+					
+				});
+			});
+			
 		}
 		else {
 			document.getElementById("divKMBold").style.display = "none";
@@ -366,69 +591,23 @@
 	////==========================================================================================================================
 	//// 生成大纲条目
 	function getHtmlString(itype,i,pos,text) {
+		// 【itype】是指大纲类型，【i】是指该项目在list中的位置
 		var str = "";
 		str += "<li><a href=\"javascript:void(0);\" onclick=\"gotoElem('" + pos + "');\">"  + text + "</a>";
-		str += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",1);\">1</a>";
-		str += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",2);\">2</a>";
-		str += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",3);\">3</a>";
-		str += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",4);\">4</a>";
-		str += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",5);\">5</a>";
-		str += " <a style=\"text-decoration:none; color:gray\" href=\"javascript:void(0);\" onclick=\"UnOutline(" + itype + "," + i + ");\">X</a></li>";
+		str += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",1);\">1</a>";
+		str += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",2);\">2</a>";
+		str += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",3);\">3</a>";
+		str += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",4);\">4</a>";
+		str += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"OutlineToContent(" + itype + "," + i + ",5);\">5</a>";
+		str += " <a class=\"function-button\" href=\"javascript:void(0);\" onclick=\"UnOutline(" + itype + "," + i + ");\">X</a></li>";
 		return str;
 	}
+	
 	////
 	////==========================================================================================================================
-	//// 生成随机数字
-	function getRandomInt() {
-		var objDate = new Date();
-		var strRnd1 = objDate.getTime();
-		var strRnd2 = Math.floor(100 + 900 * Math.random()); //100 ~ 999
-		return strRnd1.toString() + strRnd2.toString();
-	}
-	//////
-	////==========================================================================================================================
-	////
-	function getRepStr(str,i) {
-		return new Array(i+1).join(str);
-	}
-	////
-	////==========================================================================================================================
-	////
-	function getCompare(a,b) {
-		if (a.offsetTop < b.offsetTop) { return -1; }
-		else if (a.offsetTop == b.offsetTop && a.offsetLeft < b.offsetLeft) {return -1; }
-		else { return 1; }
-	}
-	////
-	////==========================================================================================================================
-	////
-	function getCheckStatus(str,iType) {
-		if (iType == 1) {
-			if (str == "1") { return true; }
-			else { return false; }
-		}
-		else {
-			if (str) { return "1"; }
-			else { return "0"; }
-		}
-	}
-	////
-	////==========================================================================================================================
-	////跳转到页面元素位置
-	function gotoElem(pos) {
-	    try {
-	        var left = objHtmlDocument.body.offsetLeft;
-	        objHtmlDocument.body.scrollTop = pos;
-	    }
-	    catch (err) {
-	        alert(err);
-	    }
-	}
-	////
-	////==========================================================================================================================
-	////
+	////后面那些【12345X】的功能
 	//
-	//大纲项转为目录项
+	//大纲项转为目录项(content)
 	function OutlineToContent(itype,i,iClass) {
 		// 书签形式【<a name="bookmarkname">】的大纲
 		if (itype == 1) {
@@ -448,7 +627,6 @@
 		else if (itype == 3) {
 			elem = listH16[i];
 			listH16.splice(i,1);
-
 			PrintH16();
 			CheckIfOutlineExist();
 			InsertOutlineToDoc(1);
@@ -459,23 +637,43 @@
 			listBold.splice(i,1);
 			PrintBold();
 		}
-		//
+		
+		// 获取该元素id，并设置iClass
+		var id = elem.id;
 		elem.setAttribute("KMContentClass", iClass);
-		if (!elem.id ) {
-			elem.id = "WizKMContent_" + getRandomInt();
+		// 给该元素添加自定义iClass属性，需要传入文档浏览器执行
+		function addiClassToElem(id, iClass, objApp){
+			var elem = document.getElementById(id);
+			elem.setAttribute("KMContentClass", iClass);
+			objApp.SetNoteModifiedByPlugin();
 		}
+		objBrowser.ExecuteScript(addiClassToElem.toString(), function(ret){
+			objBrowser.ExecuteFunction3("addiClassToElem", id, iClass, objApp, null);
+		});
+		
+		// 放入目录列表
 		listContent.push(elem);
 		listContent.sort(getCompare);
 		if (objCheckboxContent.checked) { PrintContent(); }
 		InsertContentToDoc(1);
-		//
-		WizSetDocModified();
+		
 	}
 	//目录项转为大纲项
 	function ContentToOutline(i) {
 		var elem = listContent[i];
+		var id = elem.id;
 		elem.setAttribute("KMContentClass", "");
 		listContent.splice(i,1);
+		//注入浏览器执行
+		function cancelContent(id, objApp){
+			var elem = document.getElementById(id);
+			elem.setAttribute("KMContentClass", "");
+			objApp.SetNoteModifiedByPlugin();
+		}
+		objBrowser.ExecuteScript(cancelContent.toString(), function(ret){
+			objBrowser.ExecuteFunction2("cancelContent", id, objApp, null);
+		});
+		////
 		// 书签形式【<a name="bookmarkname">】的大纲
 		if (elem.tagName=="A" && elem.name!=null && elem.name!="") {
 			listBookmark.push(elem);
@@ -494,6 +692,7 @@
 		else if ("H1H2H3H4H5H6".indexOf(elem.tagName) != -1)  {
 			listH16.push(elem);
 			listH16.sort(getCompare);
+			console.log(listH16);
 			if (objCheckboxH16.checked) { PrintH16(); }
 			InsertOutlineToDoc(1);
 			CheckIfOutlineExist();
@@ -508,7 +707,6 @@
 		PrintContent();
 		InsertContentToDoc(1);
 		CheckIfContentExist();
-		objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
 	}
 	//
 	//改变目录项级别
@@ -518,15 +716,16 @@
 			var iClass = parseInt(elem.getAttribute("KMContentClass")) + parseInt(dClass);
 			if (iClass<1) { iClass = 1; }
 			if (iClass>5) { iClass = 5; }
-			elem.style.fontSize = (20-2*iClass).toString() + "pt";
+			//elem.style.fontSize = (20-2*iClass).toString() + "pt";
 			elem.setAttribute("KMContentClass", iClass);
 		}
 		PrintContent();
 		InsertContentToDoc(1);
 		CheckIfContentExist();
-		objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
 	}
-	//
+	
+	/*
+	// 删除节点
 	function WizRemoveNode(node, removeChildren) {
 		try {
 			if (removeChildren) {
@@ -546,41 +745,48 @@
 		}
 	}
 	//
-	//取消目录项
+	//取消目录项，似乎是删除功能
 	function UnContent(i) {
 		var elem = listContent[i];
 		listContent.splice(i,1);
+		// 注入文档浏览器
+		
 		if (elem) {
 			WizRemoveNode(elem, false);
-			var objLinkTop = objHtmlDocument.getElementById(elem.id + "_Top");
+			var objLinkTop = document.getElementById(elem.id + "_Top");
 			if (objLinkTop) {
 				objLinkTop.parentNode.removeChild(objLinkTop);
 			}
 		}
+		
 		PrintContent();
 		InsertContentToDoc(1);
 		CheckIfContentExist();
-		objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+		document.body.setAttribute("wizKMDocumentModified", "1", 0);
 	}
+	*/
 	//
 	//
 	function UnOutline(itype,i) {
 		// 书签形式【<a name="bookmarkname">】的大纲
 		if (itype == 1) {
-			elem = listBookmark[i];
+			var elem = listBookmark[i];
+			var id = elem.id;
 			listBookmark.splice(i,1);
 			PrintBookmark();
 			InsertBookmarkToDoc(1);
 		}
 		// google code wiki 大纲
 		else if (itype == 2) {
-			elem = listWiki[i];
+			var elem = listWiki[i];
+			var id = elem.id;
 			listWiki.splice(i,1);
 			PrintWiki();
 		}
 		// 标题样式【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】的大纲
 		else if (itype == 3) {
-			elem = listH16[i];
+			var elem = listH16[i];
+			var id = elem.id;
 			listH16.splice(i,1);
 			PrintH16();
 			InsertOutlineToDoc(1);
@@ -588,87 +794,104 @@
 		}
 		// 加粗样式【<strong>,<b>】的大纲
 		else if (itype == 4) {
-			elem = listBold[i];
+			var elem = listBold[i];
+			var id = elem.id;
 			listBold.splice(i,1);
 			PrintBold();
 		}
-		//
-		elem.setAttribute("KMContentHide", "1");
-		objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+		//注入文档浏览器
+		function hideDocElem(id, objApp){
+			var elem = document.getElementById(id);
+			elem.setAttribute("KMContentHide", "1");
+			objApp.SetNoteModifiedByPlugin();
+		}
+		objBrowser.ExecuteScript(hideDocElem.toString(), function(ret){
+			objBrowser.ExecuteFunction2("hideDocElem", id, objApp, null)
+		})
 	}
 	////
 	////==========================================================================================================================
 	////
 	//
-	function SetCheckStatus(ynStatus,iPosition) {
+	function SetCheckStatus(ynStatus,iPosition, objApp) {
 		if (!objAPageTop) {
-			objAPageTop = objHtmlDocument.createElement("a");
+			objAPageTop = document.createElement("a");
 			objAPageTop.id="KMContentPageTopID";
-			objHtmlDocument.body.insertBefore(objAPageTop,objHtmlDocument.body.firstChild);
+			document.body.insertBefore(objAPageTop,document.body.firstChild);
 			var strCheckStatus = strCheckStatusDefault;
 		}
 		else if (!objAPageTop.KMCheckStatus) { var strCheckStatus = strCheckStatusDefault; }
 		else {var strCheckStatus = objAPageTop.KMCheckStatus; }
 		strCheckStatus = strCheckStatus.substr(0,iPosition) + getCheckStatus(ynStatus,0) + strCheckStatus.substring(iPosition+1, strCheckStatus.length);
 		objAPageTop.KMCheckStatus = strCheckStatus;
-		objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+		objApp.SetNoteModifiedByPlugin();
 	}
 	////
 	////==========================================================================================================================
-	////
+	//// 大纲展示的选项
 	function onclickContent() {
 		GetAndPrintContent();
-		SetCheckStatus(objCheckboxContent.checked,0);
+		objBrowser.ExecuteScript(SetCheckStatus.toString(), function(ret){
+			objBrowser.ExecuteFunction3("SetCheckStatus", objCheckboxContent.checked, 0, objApp, null)
+		});
 	}
 	//
 	function onclickBookmark() {
 		GetAndPrintBookmark();
-		SetCheckStatus(objCheckboxBookmark.checked,1);
+		objBrowser.ExecuteScript(SetCheckStatus.toString(), function(ret){
+			objBrowser.ExecuteFunction3("SetCheckStatus", objCheckboxBookmark.checked, 1, objApp, null)
+		});
 	}
 	//
 	function onclickWiki() {
 		GetAndPrintWiki();
-		SetCheckStatus(objCheckboxWiki.checked,2);
+		objBrowser.ExecuteScript(SetCheckStatus.toString(), function(ret){
+			objBrowser.ExecuteFunction3("SetCheckStatus", objCheckboxWiki.checked, 2, objApp, null)
+		});
 	}
 	//
 	function onclickH16() {
 		GetAndPrintH16();
-		SetCheckStatus(objCheckboxH16.checked,3);
+		objBrowser.ExecuteScript(SetCheckStatus.toString(), function(ret){
+			objBrowser.ExecuteFunction3("SetCheckStatus", objCheckboxH16.checked, 3, objApp, null)
+		});
 	}
 	//
 	function onclickBold() {
 		GetAndPrintBold();
-		SetCheckStatus(objCheckboxBold.checked,4);
+		objBrowser.ExecuteScript(SetCheckStatus.toString(), function(ret){
+			objBrowser.ExecuteFunction3("SetCheckStatus", objCheckboxBold.checked, 4, objApp, null)
+		});
 	}
 	////
 	////==========================================================================================================================
 	////添加文档顶部书签
 	function AddPageTopAnchor() {
-		var objAPageTop = objHtmlDocument.getElementById("KMContentPageTopID");
+		var objAPageTop = document.getElementById("KMContentPageTopID");
 		if (objAPageTop) {
-			if (objHtmlDocument.body.firstChild.id!="KMContentPageTopID"){
+			if (document.body.firstChild.id!="KMContentPageTopID"){
 				objAPageTop.parentNode.removeChild(objAPageTop);
-				objAPageTop = objHtmlDocument.createElement("a");
+				objAPageTop = document.createElement("a");
 				objAPageTop.id="KMContentPageTopID";
 				objAPageTop.name = "KMContentPageTopID";
 				//					objAPageTop.innerText = "返回文档顶部";
 				//					objAPageTop.style.display = "none";
-				objHtmlDocument.body.insertBefore(objAPageTop,objHtmlDocument.body.firstChild);
+				document.body.insertBefore(objAPageTop,document.body.firstChild);
 			}
 		}
 		else {
-			objAPageTop = objHtmlDocument.createElement("a");
+			objAPageTop = document.createElement("a");
 			objAPageTop.id="KMContentPageTopID";
 			objAPageTop.name = "KMContentPageTopID";
 			//				objAPageTop.innerText = "返回文档顶部";
 			//				objAPageTop.style.display = "none";
-			objHtmlDocument.body.insertBefore(objAPageTop,objHtmlDocument.body.firstChild);
+			document.body.insertBefore(objAPageTop,document.body.firstChild);
 		}
 	}
 	////
 	////==========================================================================================================================
 	////
-	//插入目录到文档顶部
+	//插入目录【wizhelpler content】到文档顶部
 	function InsertContentToDoc(isUpdate) {
 		if (listContent.length > 0) {
 			var htmlContentLink = "";
@@ -683,62 +906,118 @@
 			while (htmlContentLink.length > htmlContentLink.replace(/KMContent_EndKMContent_Begin/g,"").length) {
 				htmlContentLink = htmlContentLink.replace(/KMContent_EndKMContent_Begin/g,"");
 			}
-			htmlContentLink = htmlContentLink.replace(/KMContent_Begin/g,"<UL style=\"MARGIN: 0px 0px 0px 30px\">");
+			htmlContentLink = htmlContentLink.replace(/KMContent_Begin/g,"<UL>");
 			htmlContentLink = htmlContentLink.replace(/KMContent_End/g,"</UL>");
-			htmlContentLink = "<ul style=\"margin:0px 0px 0px 20px\">" + htmlContentLink + "</ul>";
-			//
-			var objdivContent = objHtmlDocument.getElementById("divKMContent");
-			if (!objdivContent) {
-				if (isUpdate==1) { return; }
-				else {
-					var objdivContent = objHtmlDocument.createElement("div");
-					objdivContent.id="divKMContent";
-					objdivContent.style.cssText = "border-style:groove none groove none; margin:10px 0px;";
-					objHtmlDocument.body.insertBefore(objdivContent,objHtmlDocument.body.firstChild);
+			htmlContentLink = "<ul class=\"kmdiv-box\">" + htmlContentLink + "</ul>";
+			
+			// 定义需要注入的函数
+			function InsertContent(isUpdate, htmlContentLink, objApp, pluginPath){
+				var objCommon = objApp.CreateWizObject("WizKMControls.WizCommonUI");
+				var objdivContent = document.getElementById("divKMContent");
+				if (!objdivContent) {
+					if (isUpdate==1) { return; }
+					else {
+						var objdivContent = document.createElement("div");
+						objdivContent.id="divKMContent";
+						objdivContent.className = "divKM";
+						document.body.insertBefore(objdivContent,document.body.firstChild);
+					}
 				}
+				// 准备大纲样式
+				var styleText = objCommon.LoadTextFromFile(pluginPath + "kmdiv.css");
+				var divStyleStr = "<style>" + styleText + "</style>";
+				// 插入
+				objdivContent.innerHTML = divStyleStr + htmlContentLink;
+				AddPageTopAnchor();
+				objApp.SetNoteModifiedByPlugin();
 			}
-			objdivContent.innerHTML = htmlContentLink;
-			AddPageTopAnchor();
-			objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+			// 将函数注入目标浏览器
+			if( objApp.IsCurrentDocumentEditing() && !objWindow.CurrentDocument.IsMarkdown()){
+				objBrowser.ExecuteScript(InsertContent.toString() + AddPageTopAnchor.toString(), function(ret){
+					//调用目标浏览器内注入的函数
+					objBrowser.ExecuteFunction4("InsertContent", isUpdate, htmlContentLink, objApp, pluginPath, function(ret){
+						// 更改按钮状态
+						CheckIfContentExist();
+					});
+				});
+			} else if (objApp.IsCurrentDocumentEditing() && objWindow.CurrentDocument.IsMarkdown()){
+				objWindow.ShowMessage("该插件不支持Markdown文档", "", 0);
+			} else if (!objApp.IsCurrentDocumentEditing()) {
+				objWindow.ShowMessage("请在编辑状态下插入大纲", "", 0);
+			}
 		}
 		else{
-			var objdivContent = objHtmlDocument.getElementById("divKMContent");
-			if (objdivContent) {
-				objdivContent.parentNode.removeChild(objdivContent);
+			function deleteContentDiv(objApp){
+				var objdivContent = document.getElementById("divKMContent");
+				if (objdivContent) {
+					objdivContent.parentNode.removeChild(objdivContent);
+				}
 			}
+			objBrowser.ExecuteScript(deleteContentDiv.toString(), function(ret){
+				objBrowser.ExecuteFunction1("deleteContentDiv", objApp, function(ret){
+					CheckIfContentExist();
+				})
+			})
+			
 		}
-		CheckIfContentExist();
+		
 	}
 	//
 	//删除文档顶部的目录列表
 	function DeleteContentToDoc() {
-		var objdivContent = objHtmlDocument.getElementById("divKMContent");
-		if (objdivContent) {
-			objdivContent.parentNode.removeChild(objdivContent);
-			objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+		function DeleteContent(objApp){
+			var objdivContent = document.getElementById("divKMContent");
+			if (objdivContent) {
+				objdivContent.parentNode.removeChild(objdivContent);
+				objApp.SetNoteModifiedByPlugin();
+			}
 		}
-		CheckIfContentExist();
+		
+		//将函数注入目标浏览器
+		if(objApp.IsCurrentDocumentEditing()){
+			objBrowser.ExecuteScript(DeleteContent.toString(), function(ret){
+				//调用目标浏览器内注入的函数
+				objBrowser.ExecuteFunction1("DeleteContent", objApp, function(ret){
+					// 检查按钮状态
+					CheckIfContentExist();
+				});
+			});
+		} else if (objApp.IsCurrentDocumentEditing() && objWindow.CurrentDocument.IsMarkdown()){
+			objWindow.ShowMessage("该插件不支持Markdown文档", "", 0);
+		} else if (!objApp.IsCurrentDocumentEditing()) {
+			objWindow.ShowMessage("请在编辑状态下删除大纲", "", 0);
+		}
+
 	}
 	//
 	//检查是否有文档顶部目录
 	function CheckIfContentExist() {
-		objHtmlDocument.defaultView.console.log("CheckIfContentExist");
-		var objdivContent = objHtmlDocument.getElementById("divKMContent");
-		objHtmlDocument.defaultView.console.log(objdivContent);
-		if (!objdivContent) {
-			document.getElementById("btnInsertContentToDoc").style.display = "";
-			document.getElementById("btnDeleteContentToDoc").style.display = "none";
-			return true;
-		}
-		else {
-			document.getElementById("btnInsertContentToDoc").style.display = "none";
-			document.getElementById("btnDeleteContentToDoc").style.display = "";
-			return false;
-		}
+		// 注入浏览器文档
+		objBrowser.ExecuteScript("(function(){if(document.getElementById('divKMContent')) return true}())", function(ret){
+			var objdivContent = ret;
+			if (!objdivContent && !listContent.length == 0) {
+				document.getElementById("btnInsertContentToDoc").style.display = "";
+				document.getElementById("btnDeleteContentToDoc").style.display = "none";
+				return true;
+			} else if (!objdivContent && listContent.length == 0) {
+				document.getElementById("btnInsertContentToDoc").style.display = "none";
+				document.getElementById("btnDeleteContentToDoc").style.display = "none";
+				return false;
+			} else if (objdivContent && !listContent.length == 0) {
+				document.getElementById("btnInsertContentToDoc").style.display = "none";
+				document.getElementById("btnDeleteContentToDoc").style.display = "";
+				return false;
+			} else {
+				document.getElementById("btnInsertContentToDoc").style.display = "";
+				document.getElementById("btnDeleteContentToDoc").style.display = "none";
+				return true;
+			}
+			
+		})
 	}
 	////
 	////==========================================================================================================================
-	////插入书签到文档顶部
+	////插入书签【Bookmark】到文档顶部
 	function InsertBookmarkToDoc(isUpdate) {
 		if (listBookmark.length > 0) {
 			var htmlBookmarkLink = "";
@@ -746,143 +1025,247 @@
 				var elem = listBookmark[i];
 				if (elem.getAttribute("KMContentHide") == "1") { continue; }
 				//var name = elem.name.replace(/\"|'|`/g,"");
-				htmlBookmarkLink += "<li><a href=\"#" + elem.name + "\"; >" + elem.innerText + "</a></li>";
+				htmlBookmarkLink += "<li><a href=\"#" + elem.id + "\"; >" + elem.name + "</a></li>";
 			}
-			htmlBookmarkLink = "<ul style=\"margin:0px 0px 0px 20px\">" + htmlBookmarkLink + "</ul>";
-			var objdivBookmark = objHtmlDocument.getElementById("divKMBookmark");
-			if (!objdivBookmark) {
-				if (isUpdate==1) { return; }
-				else {
-					var objdivBookmark = objHtmlDocument.createElement("div");
-					objdivBookmark.id="divKMBookmark";
-					objdivBookmark.style.cssText = "border-style:groove none groove none; margin:10px 0px;";
-					var objdivContent = objHtmlDocument.getElementById("divKMContent");
-					var objdivOutline = objHtmlDocument.getElementById("divKMOutline");
-					if (objdivOutline) {
-						objHtmlDocument.body.insertBefore(objdivBookmark,objdivOutline.nextSibling);
-					}
-					else if(objdivContent){
-						objHtmlDocument.body.insertBefore(objdivBookmark,objdivContent.nextSibling);
-					}
+			htmlBookmarkLink = "<ul class=\"kmdiv-box\">" + htmlBookmarkLink + "</ul>";
+			
+			// 定义注入函数
+			function InsertBookmark(isUpdate, htmlBookmarkLink, objApp, pluginPath){
+				var objCommon = objApp.CreateWizObject("WizKMControls.WizCommonUI");
+				var objdivBookmark = document.getElementById("divKMBookmark");
+				if (!objdivBookmark) {
+					if (isUpdate==1) { return; }
 					else {
-						objHtmlDocument.body.insertBefore(objdivBookmark,objHtmlDocument.body.firstChild);
-					}
-				}}
-			objdivBookmark.innerHTML = htmlBookmarkLink;
-			AddPageTopAnchor();
-			objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+						var objdivBookmark = document.createElement("div");
+						objdivBookmark.id="divKMBookmark";
+						objdivBookmark.className="divKM";
+						var objdivContent = document.getElementById("divKMContent");
+						var objdivOutline = document.getElementById("divKMOutline");
+						if (objdivOutline) {
+							document.body.insertBefore(objdivBookmark,objdivOutline.nextSibling);
+						}
+						else if(objdivContent){
+							document.body.insertBefore(objdivBookmark,objdivContent.nextSibling);
+						}
+						else {
+							document.body.insertBefore(objdivBookmark,document.body.firstChild);
+						}
+					}}
+				
+				// 准备大纲样式
+				var styleText = objCommon.LoadTextFromFile(pluginPath + "kmdiv.css");
+				var divStyleStr = "<style>" + styleText + "</style>";
+				//
+				objdivBookmark.innerHTML = divStyleStr + htmlBookmarkLink;
+				AddPageTopAnchor();
+				objApp.SetNoteModifiedByPlugin();	
+			}
+			
+			//将函数注入目标浏览器
+				if( objApp.IsCurrentDocumentEditing() && !objWindow.CurrentDocument.IsMarkdown()){
+					objBrowser.ExecuteScript(InsertBookmark.toString() + AddPageTopAnchor.toString(), function(ret){
+						//调用目标浏览器内注入的函数
+						objBrowser.ExecuteFunction4("InsertBookmark", isUpdate, htmlBookmarkLink, objApp, pluginPath, function(ret){
+							// 更改按钮状态
+							CheckIfBookmarkExist();
+						});
+					});
+				} else if (objApp.IsCurrentDocumentEditing() && objWindow.CurrentDocument.IsMarkdown()){
+					objWindow.ShowMessage("该插件不支持Markdown文档", "", 0);
+				} else if (!objApp.IsCurrentDocumentEditing()) {
+					objWindow.ShowMessage("请在编辑状态下插入大纲", "", 0);
+				}
+			
+
 		}
 		else{
-			var objdivBookmark = objHtmlDocument.getElementById("divKMBookmark");
-			if (objdivBookmark) {
-				objdivBookmark.parentNode.removeChild(objdivBookmark);
+			function deleteBookmarkDiv(objApp){
+				var objdivBookmark = document.getElementById("divKMBookmark");
+				if (objdivBookmark) {
+					objdivBookmark.parentNode.removeChild(objdivBookmark);
+				}	
 			}
+			
+			objBrowser.ExecuteScript(deleteBookmarkDiv.toString(), function(ret){
+				objBrowser.ExecuteFunction1("deleteBookmarkDiv", objApp, function(ret){
+					CheckIfBookmarkExist();
+				})
+			})
 		}
-		CheckIfBookmarkExist();
 	}
 	//
 	//删除文档顶部的书签列表
 	function DeleteBookmarkToDoc() {
-		var objdivBookmark = objHtmlDocument.getElementById("divKMBookmark");
-		if (objdivBookmark) {
-			objdivBookmark.parentNode.removeChild(objdivBookmark);
-			objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+		function DeleteBookmark(){
+			var objdivBookmark = document.getElementById("divKMBookmark");
+			if (objdivBookmark) {
+				objdivBookmark.parentNode.removeChild(objdivBookmark);
+				document.body.setAttribute("wizKMDocumentModified", "1", 0);
+			}	
 		}
-		CheckIfBookmarkExist();
+		//将函数注入目标浏览器
+		if(objApp.IsCurrentDocumentEditing()){
+			objBrowser.ExecuteScript(DeleteBookmark.toString(), function(ret){
+				//调用目标浏览器内注入的函数
+				objBrowser.ExecuteFunction1("DeleteBookmark", objApp, function(ret){
+					// 检查按钮状态
+					CheckIfBookmarkExist();
+				});
+			});
+		} else if (objApp.IsCurrentDocumentEditing() && objWindow.CurrentDocument.IsMarkdown()){
+			objWindow.ShowMessage("该插件不支持Markdown文档", "", 0);
+		} else if (!objApp.IsCurrentDocumentEditing()) {
+			objWindow.ShowMessage("请在编辑状态下删除大纲", "", 0);
+		}
 	}
 	//
 	//检查是否有文档顶部书签列表
 	function CheckIfBookmarkExist() {
-		var objdivBookmark = objHtmlDocument.getElementById("divKMBookmark");
-		if (!objdivBookmark) {
-			document.getElementById("btnInsertBookmarkToDoc").style.display = "";
-			document.getElementById("btnDeleteBookmarkToDoc").style.display = "none";
-		}
-		else {
-			document.getElementById("btnInsertBookmarkToDoc").style.display = "none";
-			document.getElementById("btnDeleteBookmarkToDoc").style.display = "";
-		}
+		objBrowser.ExecuteScript("(function(){if(document.getElementById('divKMBookmark')) return true}())", function(ret){
+			var objdivBookmark = ret;
+			if (!objdivBookmark) {
+				document.getElementById("btnInsertBookmarkToDoc").style.display = "";
+				document.getElementById("btnDeleteBookmarkToDoc").style.display = "none";
+			}
+			else {
+				document.getElementById("btnInsertBookmarkToDoc").style.display = "none";
+				document.getElementById("btnDeleteBookmarkToDoc").style.display = "";
+			}
+		})
 	}
 	////
 	////==========================================================================================================================
 	////插入【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】大纲到文档顶部
+	// 
 	function InsertOutlineToDoc(isUpdate) {
 		if (listH16.length > 0) {
 			var htmlH16Link = "";
 			for (i=0; i<listH16.length; i++) {
 				var elem = listH16[i];
 				if (elem.getAttribute("KMContentHide") == "1") { continue; }
-				if (!elem.id || elem.id.indexOf("WizKMOutline_")==0) {elem.id = "WizKMOutline_" + getRandomInt(); }
+				//h1~h6在Get时就生成了id
+				//if (!elem.id || elem.id.indexOf("WizKMOutline_")==0) {elem.id = "WizKMOutline_" + getRandomInt(); }
 				iClass = parseInt(elem.tagName.substr(1,1));
 				htmlH16Link += getRepStr("KMContent_Begin", iClass-1);
-				htmlH16Link += "<li><a href=\"#" + elem.id + "\"; >" + elem.innerText + "</a></li>";
+				htmlH16Link += "<li><a href=\"#" + elem.id + "\" >" + elem.innerText + "</a></li>";
 				htmlH16Link += getRepStr("KMContent_End", iClass-1);
 			}
 			if (htmlH16Link.length>0) {
 				while (htmlH16Link.length > htmlH16Link.replace(/KMContent_EndKMContent_Begin/g,"").length) {
 					htmlH16Link = htmlH16Link.replace(/KMContent_EndKMContent_Begin/g,"");
 				}
-				htmlH16Link = htmlH16Link.replace(/KMContent_Begin/g,"<UL style=\"MARGIN: 0px 0px 0px 30px\">");
+				htmlH16Link = htmlH16Link.replace(/KMContent_Begin/g,"<UL>");
 				htmlH16Link = htmlH16Link.replace(/KMContent_End/g,"</UL>");
-				htmlH16Link = "<ul style=\"margin:0px 0px 0px 20px\">" + htmlH16Link + "</ul>";
-				//
-				var objdivOutline = objHtmlDocument.getElementById("divKMOutline");
-				if (!objdivOutline) {
-					if (isUpdate==1) { return; }
-					else {
-						var objdivOutline = objHtmlDocument.createElement("div");
-						objdivOutline.id="divKMOutline";
-						objdivOutline.style.cssText = "border-style:groove none groove none; margin:10px 0px;";
-						var objdivContent = objHtmlDocument.getElementById("divKMContent");
-						if (objdivContent){
-							objHtmlDocument.body.insertBefore(objdivOutline,objdivContent.nextSibling);
-						}
+				htmlH16Link = "<ul class=\"kmdiv-box\" >" + htmlH16Link + "</ul>";
+				
+				//定义需要注入的函数
+				function InsertOutline(isUpdate, htmlH16Link, objApp, pluginPath){
+					var objCommon = objApp.CreateWizObject("WizKMControls.WizCommonUI");
+					var objdivOutline = document.getElementById("divKMOutline");
+					if (!objdivOutline) {
+						// 如果是更新内容，那么久不用再创建objdivOutlie了
+						if (isUpdate==1) { return; } 
 						else {
-							objHtmlDocument.body.insertBefore(objdivOutline,objHtmlDocument.body.firstChild);
+							var objdivOutline = document.createElement("div");
+							objdivOutline.id="divKMOutline";
+							objdivOutline.className = "divKM";
+							var objdivContent = document.getElementById("divKMContent");
+							if (objdivContent){
+								document.body.insertBefore(objdivOutline,objdivContent.nextSibling);
+							}
+							else {
+								document.body.insertBefore(objdivOutline,document.body.firstChild);
+							}
 						}
 					}
+					// 准备大纲样式
+					var styleText = objCommon.LoadTextFromFile(pluginPath + "kmdiv.css");
+					var divStyleStr = "<style>" + styleText + "</style>";
+					// 更改大纲内容
+					objdivOutline.innerHTML = divStyleStr + htmlH16Link;
+					AddPageTopAnchor();
+					objApp.SetNoteModifiedByPlugin();
 				}
-				objdivOutline.innerHTML = htmlH16Link;
-				AddPageTopAnchor();
-				objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+				
+				//将函数注入目标浏览器
+				if( objApp.IsCurrentDocumentEditing() && !objWindow.CurrentDocument.IsMarkdown()){
+					objBrowser.ExecuteScript(InsertOutline.toString() + AddPageTopAnchor.toString(), function(ret){
+						//调用目标浏览器内注入的函数
+						objBrowser.ExecuteFunction4("InsertOutline", isUpdate, htmlH16Link, objApp, pluginPath, function(ret){
+							// 更改按钮状态
+							CheckIfOutlineExist();
+						});
+					});
+				} else if (objApp.IsCurrentDocumentEditing() && objWindow.CurrentDocument.IsMarkdown()){
+					objWindow.ShowMessage("该插件不支持Markdown文档", "", 0);
+				} else if (!objApp.IsCurrentDocumentEditing()) {
+					objWindow.ShowMessage("请在编辑状态下插入大纲", "", 0);
+				}
+				
 			}
-			CheckIfOutlineExist();
+			
 		}
 		else{
-			var objdivOutline = objHtmlDocument.getElementById("divKMOutline");
-			if (objdivOutline) {
-				objdivOutline.parentNode.removeChild(objdivOutline);
+			function deleteH16Div(){
+				var objdivOutline = document.getElementById("divKMOutline");
+				if (objdivOutline) {
+					objdivOutline.parentNode.removeChild(objdivOutline);
+				}
 			}
+			objBrowser.ExecuteScript(deleteH16Div.toString(), function(ret){
+				objBrowser.ExecuteFunction1("deleteH16Div", objApp, function(ret){
+					CheckIfOutlineExist();
+				})
+			})
+			
 		}
 	}
 	//
 	//删除【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】大纲
 	function DeleteOutlineToDoc() {
-		var objdivOutline = objHtmlDocument.getElementById("divKMOutline");
-		if (objdivOutline) {
-			objdivOutline.parentNode.removeChild(objdivOutline);
-			objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1", 0);
+		function DeleteOutline(objApp){
+			var objdivOutline = document.getElementById("divKMOutline");
+			if (objdivOutline) {
+				objdivOutline.parentNode.removeChild(objdivOutline);
+				objApp.SetNoteModifiedByPlugin();
+			}
 		}
-		CheckIfOutlineExist();
+		//将函数注入目标浏览器
+		if(objApp.IsCurrentDocumentEditing()){
+			objBrowser.ExecuteScript(DeleteOutline.toString(), function(ret){
+				//调用目标浏览器内注入的函数
+				objBrowser.ExecuteFunction1("DeleteOutline", objApp, function(ret){
+					// 检查按钮状态
+					CheckIfOutlineExist();
+				});
+			});
+		} else if (objApp.IsCurrentDocumentEditing() && objWindow.CurrentDocument.IsMarkdown()){
+			objWindow.ShowMessage("该插件不支持Markdown文档", "", 0);
+		} else if (!objApp.IsCurrentDocumentEditing()) {
+			objWindow.ShowMessage("请在编辑状态下删除大纲", "", 0);
+		}
 	}
 	//
 	//检查【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】大纲
 	function CheckIfOutlineExist() {
-		var objdivOutline = objHtmlDocument.getElementById("divKMOutline");
-		if (!objdivOutline) {
-			document.getElementById("btnInsertOutlineToDoc").style.display = "";
-			document.getElementById("btnDeleteOutlineToDoc").style.display = "none";
-		}
-		else {
-			document.getElementById("btnInsertOutlineToDoc").style.display = "none";
-			document.getElementById("btnDeleteOutlineToDoc").style.display = "";
-		}
+		objBrowser.ExecuteScript("(function(){if(document.getElementById('divKMOutline')) return true}())", function(ret){
+			var objdivOutline = ret;
+			if (!objdivOutline) {
+				// 更改按钮显示状态
+				document.getElementById("btnInsertOutlineToDoc").style.display = "";
+				document.getElementById("btnDeleteOutlineToDoc").style.display = "none";
+			}
+			else {
+				document.getElementById("btnInsertOutlineToDoc").style.display = "none";
+				document.getElementById("btnDeleteOutlineToDoc").style.display = "";
+			}
+		});
 	}
 
 	////
 	////==========================================================================================================================
 	////
 	function WizSetDocModified() {
-		objHtmlDocument.body.setAttribute("wizKMDocumentModified", "1");
+		document.body.setAttribute("wizKMDocumentModified", "1");
 	}
 	////
