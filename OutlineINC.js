@@ -1,4 +1,12 @@
-﻿	//
+﻿/* 2017-11-4 记录
+ * 已知bug, 在markdown文档编辑模式下会对所有<div>标签添加id等属性
+ * 没搞清楚【google code wiki 大纲】是什么，所以禁用其功能
+ *
+ *
+ *
+ */
+
+	//
 	var strCheckStatusDefault = "111111"
 	//浏览器对象
 	var objApp = window.external;
@@ -145,7 +153,7 @@
 		//
 		GetAndPrintContent();
 		GetAndPrintBookmark();
-		GetAndPrintWiki();
+		//GetAndPrintWiki();
 		GetAndPrintH16();
 		GetAndPrintBold();
 	}
@@ -296,6 +304,7 @@
 		return listH16;
 	}
 	//
+	/*
 	function GetWiki(){
 		// 添加 google code wiki 大纲
 		var listWiki = [];
@@ -318,6 +327,7 @@
 		//console.log("GetWiki" + listWiki);
 		return listWiki;
 	}
+	*/
 	//
 	function GetBold(){
 		// 添加加粗样式【<strong>,<b>】的大纲
@@ -412,6 +422,7 @@
 	}
 	//
 	//添加 google code wiki 大纲
+	/*
 	function PrintWiki() {
 		if (listWiki.length > 0) {
 			var htmlWiki = "";
@@ -430,6 +441,7 @@
 			document.getElementById("divKMWiki").style.display = "none";
 		}
 	}
+	*/
 	//
 	//添加标题样式【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】的大纲
 	function PrintH16() {
@@ -525,6 +537,7 @@
 		}
 	}
 	//
+	/*
 	function GetAndPrintWiki() {
 		if (objCheckboxWiki.checked) {
 			//将函数注入目标浏览器
@@ -545,6 +558,7 @@
 			document.getElementById("divKMWiki").style.display = "none";
 		}
 	}
+	*/
 	//
 	function GetAndPrintH16() {
 		if (objCheckboxH16.checked) {
@@ -609,104 +623,127 @@
 	//
 	//大纲项转为目录项(content)
 	function OutlineToContent(itype,i,iClass) {
-		// 书签形式【<a name="bookmarkname">】的大纲
-		if (itype == 1) {
-			elem = listBookmark[i];
-			listBookmark.splice(i,1);
-			PrintBookmark();
-			InsertBookmarkToDoc(1);
-			CheckIfBookmarkExist();
-		}
-		// google code wiki 大纲
-		else if (itype == 2) {
-			elem = listWiki[i];
-			listWiki.splice(i,1);
-			PrintWiki();
-		}
-		// 标题样式【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】的大纲
-		else if (itype == 3) {
-			elem = listH16[i];
-			listH16.splice(i,1);
-			PrintH16();
-			CheckIfOutlineExist();
-			InsertOutlineToDoc(1);
-		}
-		// 加粗样式【<strong>,<b>】的大纲
-		else if (itype == 4) {
-			elem = listBold[i];
-			listBold.splice(i,1);
-			PrintBold();
-		}
-		
-		// 获取该元素id，并设置iClass
-		var id = elem.id;
-		elem.setAttribute("KMContentClass", iClass);
-		// 给该元素添加自定义iClass属性，需要传入文档浏览器执行
-		function addiClassToElem(id, iClass, objApp){
-			var elem = document.getElementById(id);
+		// 判断
+		if (objApp.IsCurrentDocumentEditing() && !objWindow.CurrentDocument.IsMarkdown()) {
+			// 书签形式【<a name="bookmarkname">】的大纲
+			if (itype == 1) {
+				elem = listBookmark[i];
+				listBookmark.splice(i,1);
+				PrintBookmark();
+				InsertBookmarkToDoc(1);
+				CheckIfBookmarkExist();
+			}
+			// google code wiki 大纲
+			/*
+			else if (itype == 2) {
+				elem = listWiki[i];
+				listWiki.splice(i,1);
+				PrintWiki();
+			}
+			*/
+			// 标题样式【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】的大纲
+			else if (itype == 3) {
+				elem = listH16[i];
+				listH16.splice(i,1);
+				PrintH16();
+				CheckIfOutlineExist();
+				InsertOutlineToDoc(1);
+			}
+			// 加粗样式【<strong>,<b>】的大纲
+			else if (itype == 4) {
+				elem = listBold[i];
+				listBold.splice(i,1);
+				PrintBold();
+			}
+			
+			// 获取该元素id，并设置iClass
+			var id = elem.id;
 			elem.setAttribute("KMContentClass", iClass);
-			objApp.SetNoteModifiedByPlugin();
+			// 给该元素添加自定义iClass属性，需要传入文档浏览器执行
+			function addiClassToElem(id, iClass, objApp){
+				var elem = document.getElementById(id);
+				elem.setAttribute("KMContentClass", iClass);
+				objApp.SetNoteModifiedByPlugin();
+			}	
+			//注入
+			objBrowser.ExecuteScript(addiClassToElem.toString(), function(ret){
+				objBrowser.ExecuteFunction3("addiClassToElem", id, iClass, objApp, null);
+			});	
+			// 放入目录列表
+			listContent.push(elem);
+			listContent.sort(getCompare);
+			if (objCheckboxContent.checked) { PrintContent(); }
+			InsertContentToDoc(1);	
+		} else if (objApp.IsCurrentDocumentEditing() && objWindow.CurrentDocument.IsMarkdown()){
+			objWindow.ShowMessage("该插件不支持Markdown文档", "", 0);
+			return false;
+		} else if (!objApp.IsCurrentDocumentEditing()) {
+			objWindow.ShowMessage("请在编辑状态下插入大纲", "", 0);
+			return false;
 		}
-		objBrowser.ExecuteScript(addiClassToElem.toString(), function(ret){
-			objBrowser.ExecuteFunction3("addiClassToElem", id, iClass, objApp, null);
-		});
-		
-		// 放入目录列表
-		listContent.push(elem);
-		listContent.sort(getCompare);
-		if (objCheckboxContent.checked) { PrintContent(); }
-		InsertContentToDoc(1);
-		
+
 	}
 	//目录项转为大纲项
 	function ContentToOutline(i) {
-		var elem = listContent[i];
-		var id = elem.id;
-		elem.setAttribute("KMContentClass", "");
-		listContent.splice(i,1);
-		//注入浏览器执行
-		function cancelContent(id, objApp){
-			var elem = document.getElementById(id);
+		// 判断
+		if (objApp.IsCurrentDocumentEditing() && !objWindow.CurrentDocument.IsMarkdown()) {
+			var elem = listContent[i];
+			var id = elem.id;
 			elem.setAttribute("KMContentClass", "");
-			objApp.SetNoteModifiedByPlugin();
+			listContent.splice(i,1);
+			//注入浏览器执行
+			function cancelContent(id, objApp){
+				var elem = document.getElementById(id);
+				elem.setAttribute("KMContentClass", "");
+				objApp.SetNoteModifiedByPlugin();
+			}	
+			// 注入
+			objBrowser.ExecuteScript(cancelContent.toString(), function(ret){
+				objBrowser.ExecuteFunction2("cancelContent", id, objApp, null);
+			});
+			// 书签形式【<a name="bookmarkname">】的大纲
+			if (elem.tagName=="A" && elem.name!=null && elem.name!="") {
+				listBookmark.push(elem);
+				listBookmark.sort(getCompare);
+				if (objCheckboxBookmark.checked) { PrintBookmark(); }
+				InsertBookmarkToDoc(1);
+				CheckIfBookmarkExist();
+			}
+			// google code wiki 大纲
+			/*
+			else if (elem.tagName == "DIV" && elem.innerText.search(/^=[^<>]+=$/) > -1) {
+				listWiki.push(elem);
+				listWiki.sort(getCompare);
+				if (objCheckboxWiki.checked) { PrintWiki(); }
+			}
+			*/
+			// 标题样式【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】的大纲
+			else if ("H1H2H3H4H5H6".indexOf(elem.tagName) != -1)  {
+				listH16.push(elem);
+				listH16.sort(getCompare);
+				console.log(listH16);
+				if (objCheckboxH16.checked) { PrintH16(); }
+				InsertOutlineToDoc(1);
+				CheckIfOutlineExist();
+			}
+			// 加粗样式【<strong>,<b>】的大纲
+			else if (elem.tagName == "STRONG" || elem.tagName == "B") {
+				listBold.push(elem);
+				listBold.sort(getCompare);
+				if (objCheckboxBold.checked) { PrintBold(); }
+			}
+			//
+			PrintContent();
+			InsertContentToDoc(1);
+			CheckIfContentExist();	
+		} else if (objApp.IsCurrentDocumentEditing() && objWindow.CurrentDocument.IsMarkdown()){
+			objWindow.ShowMessage("该插件不支持Markdown文档", "", 0);
+			return false;
+		} else if (!objApp.IsCurrentDocumentEditing()) {
+			objWindow.ShowMessage("请在编辑状态下插入大纲", "", 0);
+			return false;
 		}
-		objBrowser.ExecuteScript(cancelContent.toString(), function(ret){
-			objBrowser.ExecuteFunction2("cancelContent", id, objApp, null);
-		});
-		////
-		// 书签形式【<a name="bookmarkname">】的大纲
-		if (elem.tagName=="A" && elem.name!=null && elem.name!="") {
-			listBookmark.push(elem);
-			listBookmark.sort(getCompare);
-			if (objCheckboxBookmark.checked) { PrintBookmark(); }
-			InsertBookmarkToDoc(1);
-			CheckIfBookmarkExist();
-		}
-		// google code wiki 大纲
-		else if (elem.tagName == "DIV" && elem.innerText.search(/^=[^<>]+=$/) > -1) {
-			listWiki.push(elem);
-			listWiki.sort(getCompare);
-			if (objCheckboxWiki.checked) { PrintWiki(); }
-		}
-		// 标题样式【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】的大纲
-		else if ("H1H2H3H4H5H6".indexOf(elem.tagName) != -1)  {
-			listH16.push(elem);
-			listH16.sort(getCompare);
-			console.log(listH16);
-			if (objCheckboxH16.checked) { PrintH16(); }
-			InsertOutlineToDoc(1);
-			CheckIfOutlineExist();
-		}
-		// 加粗样式【<strong>,<b>】的大纲
-		else if (elem.tagName == "STRONG" || elem.tagName == "B") {
-			listBold.push(elem);
-			listBold.sort(getCompare);
-			if (objCheckboxBold.checked) { PrintBold(); }
-		}
-		//
-		PrintContent();
-		InsertContentToDoc(1);
-		CheckIfContentExist();
+		
 	}
 	//
 	//改变目录项级别
@@ -777,12 +814,14 @@
 			InsertBookmarkToDoc(1);
 		}
 		// google code wiki 大纲
+		/*
 		else if (itype == 2) {
 			var elem = listWiki[i];
 			var id = elem.id;
 			listWiki.splice(i,1);
 			PrintWiki();
 		}
+		*/
 		// 标题样式【<h1>,<h2>,<h3>,<h4>,<h5>,<h6>】的大纲
 		else if (itype == 3) {
 			var elem = listH16[i];
